@@ -7,13 +7,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create Xcode Project
+      - name: Create Info.plist and Xcode Project
         run: |
+          # Создаем файл настроек приложения вручную
+          cat <<EOF > Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>Rumble</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.rumble.byedpi</string>
+              <key>CFBundleName</key>
+              <string>Rumble</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>MinimumOSVersion</key>
+              <string>15.0</string>
+          </dict>
+          </plist>
+          EOF
+
+          # Создаем проект и привязываем Info.plist
           gem install xcodeproj
           ruby -e "
           require 'xcodeproj'
           project = Xcodeproj::Project.new('Rumble.xcodeproj')
           target = project.new_target(:application, 'Rumble', :ios, '15.0')
+          target.build_configurations.each { |config| config.build_settings['INFOPLIST_FILE'] = 'Info.plist' }
           Dir.glob('*.{h,m}').each do |file_path|
             file_ref = project.main_group.new_file(file_path)
             target.add_file_references([file_ref])
@@ -23,32 +49,25 @@ jobs:
 
       - name: Build IPA
         run: |
-          # Собираем проект, отключая все проверки и валидацию
           xcodebuild -project Rumble.xcodeproj \
           -scheme Rumble \
           -sdk iphoneos \
           -configuration Release \
           CODE_SIGNING_ALLOWED=NO \
           CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ENTITLEMENTS="" \
           AD_HOC_CODE_SIGNING_ALLOWED=YES \
           COMPILER_INDEX_STORE_ENABLE=NO \
           VALIDATE_PRODUCT=NO \
           clean build
           
-          # Создаем папку для упаковки
           mkdir -p Payload
-          
-          # Ищем скомпилированное приложение (оно может быть в разных папках)
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Rumble.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find . -name "Rumble.app" -type d | head -n 1)
+          # Ищем папку .app в недрах Xcode
+          APP_PATH=\$(find ~/Library/Developer/Xcode/DerivedData -name "Rumble.app" -type d | head -n 1)
+          if [ -z "\$APP_PATH" ]; then
+            APP_PATH=\$(find . -name "Rumble.app" -type d | head -n 1)
           fi
           
-          echo "Найдено приложение по пути: $APP_PATH"
-          
-          # Копируем и упаковываем
-          cp -r "$APP_PATH" Payload/
+          cp -r "\$APP_PATH" Payload/
           zip -r Rumble.ipa Payload
 
       - name: Upload
