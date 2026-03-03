@@ -9,25 +9,35 @@ jobs:
 
       - name: Create Xcode Project
         run: |
-          # Используем инструмент для создания проекта из исходников
           gem install xcodeproj
           ruby -e "
           require 'xcodeproj'
           project = Xcodeproj::Project.new('Rumble.xcodeproj')
           target = project.new_target(:application, 'Rumble', :ios, '15.0')
-          target.add_file_references(Dir.glob('*.{h,m}'))
+          
+          # Правильное добавление файлов в проект
+          Dir.glob('*.{h,m}').each do |file_path|
+            file_ref = project.main_group.new_file(file_path)
+            target.add_file_references([file_ref])
+          end
+          
           project.save
           "
 
       - name: Build IPA
         run: |
-          # Собираем созданный проект
+          # Собираем проект
           xcodebuild -project Rumble.xcodeproj -scheme Rumble -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO clean build
           
-          # Упаковка
+          # Упаковка в IPA
           mkdir -p Payload
-          APP_PATH=\$(find build/Release-iphoneos -name \"*.app\" | head -n 1)
-          cp -r \"\$APP_PATH\" Payload/
+          # Ищем скомпилированное приложение
+          APP_PATH=$(find build/Release-iphoneos -name "*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Ошибка: Приложение не собралось. Проверь логи компиляции выше."
+            exit 1
+          fi
+          cp -r "$APP_PATH" Payload/
           zip -r Rumble.ipa Payload
 
       - name: Upload
