@@ -1,0 +1,34 @@
+name: Build Rumble IPA (Theos)
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com)"
+          echo "THEOS=~/theos" >> $GITHUB_ENV
+          
+      - name: Build Package
+        run: |
+          export THEOS=~/theos
+          make package FINALPACKAGE=1
+          
+      - name: Create IPA
+        run: |
+          mkdir -p Payload
+          # Ищем папку приложения после сборки (она будет в .theos/obj/debug или похожем месте)
+          APP_DIR=$(find . -name "*.app" -type d | head -n 1)
+          cp -r "$APP_DIR" Payload/
+          zip -r Rumble.ipa Payload
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rumble-Theos-IPA
+          path: Rumble.ipa
