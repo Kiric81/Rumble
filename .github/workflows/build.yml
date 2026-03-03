@@ -1,4 +1,4 @@
-name: Build Rumble IPA (Theos)
+name: Ultimate Rumble Build
 on: [workflow_dispatch]
 
 jobs:
@@ -9,26 +9,62 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Theos
+      - name: Setup Build Environment
         run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com)"
-          echo "THEOS=~/theos" >> $GITHUB_ENV
+          # Устанавливаем путь к инструментам разработчика Apple
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           
-      - name: Build Package
-        run: |
-          export THEOS=~/theos
-          make package FINALPACKAGE=1
+          # Создаем структуру папок вручную, так как проекта нет
+          mkdir -p build/Payload
           
-      - name: Create IPA
+      - name: Compile Source
         run: |
-          mkdir -p Payload
-          # Ищем папку приложения после сборки (она будет в .theos/obj/debug или похожем месте)
-          APP_DIR=$(find . -name "*.app" -type d | head -n 1)
-          cp -r "$APP_DIR" Payload/
-          zip -r Rumble.ipa Payload
+          # Пытаемся скомпилировать все .m файлы в один исполняемый файл
+          # Это грубый метод, но для репозитория без xcodeproj он единственный
+          clang -v -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+          -arch arm64 -miphoneos-version-min=14.0 \
+          -framework Foundation -framework UIKit -framework CoreGraphics \
+          -o build/Rumble *.m
+          
+      - name: Create App Bundle
+        run: |
+          # Создаем папку приложения
+          mkdir -p build/Payload/Rumble.app
+          
+          # Копируем скомпилированный файл и ресурсы
+          cp build/Rumble build/Payload/Rumble.app/
+          [ -d Resources ] && cp -r Resources/* build/Payload/Rumble.app/ || echo "No resources found"
+          
+          # Создаем базовый Info.plist (без него iOS не поймет, что это за файл)
+          cat <<EOF > build/Payload/Rumble.app/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>Rumble</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.rumble.byedpi</string>
+              <key>CFBundleName</key>
+              <string>Rumble</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
 
-      - name: Upload Artifact
+      - name: Packaging IPA
+        run: |
+          cd build
+          zip -r ../Rumble.ipa Payload
+          
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Rumble-Theos-IPA
+          name: Rumble-Manual-Build
           path: Rumble.ipa
+
