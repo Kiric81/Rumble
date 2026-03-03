@@ -1,4 +1,4 @@
-name: Ultimate Rumble Build
+name: Manual Xcode Project Build
 on: [workflow_dispatch]
 
 jobs:
@@ -6,65 +6,32 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Setup Build Environment
+      - name: Create Xcode Project
         run: |
-          # Устанавливаем путь к инструментам разработчика Apple
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-          
-          # Создаем структуру папок вручную, так как проекта нет
-          mkdir -p build/Payload
-          
-      - name: Compile Source
-        run: |
-          # Пытаемся скомпилировать все .m файлы в один исполняемый файл
-          # Это грубый метод, но для репозитория без xcodeproj он единственный
-          clang -v -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-          -arch arm64 -miphoneos-version-min=14.0 \
-          -framework Foundation -framework UIKit -framework CoreGraphics \
-          -o build/Rumble *.m
-          
-      - name: Create App Bundle
-        run: |
-          # Создаем папку приложения
-          mkdir -p build/Payload/Rumble.app
-          
-          # Копируем скомпилированный файл и ресурсы
-          cp build/Rumble build/Payload/Rumble.app/
-          [ -d Resources ] && cp -r Resources/* build/Payload/Rumble.app/ || echo "No resources found"
-          
-          # Создаем базовый Info.plist (без него iOS не поймет, что это за файл)
-          cat <<EOF > build/Payload/Rumble.app/Info.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>Rumble</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.rumble.byedpi</string>
-              <key>CFBundleName</key>
-              <string>Rumble</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>LSRequiresIPhoneOS</key>
-              <true/>
-          </dict>
-          </plist>
-          EOF
+          # Используем инструмент для создания проекта из исходников
+          gem install xcodeproj
+          ruby -e "
+          require 'xcodeproj'
+          project = Xcodeproj::Project.new('Rumble.xcodeproj')
+          target = project.new_target(:application, 'Rumble', :ios, '15.0')
+          target.add_file_references(Dir.glob('*.{h,m}'))
+          project.save
+          "
 
-      - name: Packaging IPA
+      - name: Build IPA
         run: |
-          cd build
-          zip -r ../Rumble.ipa Payload
+          # Собираем созданный проект
+          xcodebuild -project Rumble.xcodeproj -scheme Rumble -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO clean build
           
+          # Упаковка
+          mkdir -p Payload
+          APP_PATH=\$(find build/Release-iphoneos -name \"*.app\" | head -n 1)
+          cp -r \"\$APP_PATH\" Payload/
+          zip -r Rumble.ipa Payload
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Rumble-Manual-Build
+          name: Rumble-Manual-IPA
           path: Rumble.ipa
-
